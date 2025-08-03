@@ -1,8 +1,6 @@
 # Environment variables
 .env
 
-文档JavaScript.md
-文档Python.md
 # Python
 __pycache__/
 *.pyc
