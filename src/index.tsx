@@ -1,4 +1,4 @@
-import {css, CSSResultGroup, html, LitElement, svg} from 'lit';
+import {css, CSSResultGroup, html, LitElement, svg, PropertyValues} from 'lit';
 import {customElement, property, query, state} from 'lit/decorators.js';
 import {classMap} from 'lit/directives/class-map.js';
 import {styleMap} from 'lit/directives/style-map.js';
@@ -121,7 +121,7 @@ class PromptController extends LitElement {
 
     private updateText() {
         const newText = this.textInput.textContent?.trim();
-        if (newText && newText !== this.text) {
+        if (newText !== undefined && newText !== this.text) {
             this.text = newText;
             this.dispatchPromptChange();
         }
@@ -156,6 +156,16 @@ class PromptController extends LitElement {
         this.dispatchEvent(new CustomEvent('prompt-removed', { detail: this.promptId, bubbles: true, composed: true }));
     }
 
+    override firstUpdated() {
+        this.textInput.textContent = this.text;
+    }
+
+    override updated(changedProperties: PropertyValues<this>) {
+        if (changedProperties.has('text') && this.textInput.textContent !== this.text) {
+            this.textInput.textContent = this.text;
+        }
+    }
+
     override render() {
         const handleIcon = svg`
             <svg viewBox="0 0 10 16" fill="currentColor" style="width: 1.5vmin; height: 2vmin;">
@@ -166,7 +176,7 @@ class PromptController extends LitElement {
         return html`
             <div class="prompt" style=${styleMap({'--prompt-color': this.color})}>
                 <div class="drag-handle">${handleIcon}</div>
-                <span class="prompt-text" contenteditable="true" @blur=${this.updateText}>${this.text}</span>
+                <span class="prompt-text" contenteditable="true" @blur=${this.updateText}></span>
                 <div class="weight-control">
                     <input type="range" min="0" max="2" step="0.01" .value=${this.weight} @input=${this.updateWeight}>
                     <input type="number" class="weight-value" min="0" max="2" step="0.01" .value=${this.weight.toFixed(2)} @input=${this.updateWeight}>
@@ -620,7 +630,7 @@ class PromptDjApp extends LitElement {
         return new Uint8Array(buffer);
     }
 
-    private handleDownload = () => {
+    private handleDownloadWav = () => {
         if (this.receivedAudioChunks.length === 0) return;
         const totalLength = this.receivedAudioChunks.reduce((acc, chunk) => acc + chunk.length, 0);
         const concatenatedData = new Uint8Array(totalLength);
@@ -642,6 +652,67 @@ class PromptDjApp extends LitElement {
         a.click();
         a.remove();
         URL.revokeObjectURL(url);
+    }
+
+    private handleDownloadMp3 = () => {
+        if (this.receivedAudioChunks.length === 0) return;
+
+        // 1. Concatenate all raw audio chunks
+        const totalLength = this.receivedAudioChunks.reduce((acc, chunk) => acc + chunk.length, 0);
+        const concatenatedData = new Uint8Array(totalLength);
+        let offset = 0;
+        this.receivedAudioChunks.forEach(chunk => {
+            concatenatedData.set(chunk, offset);
+            offset += chunk.length;
+        });
+
+        // 2. Convert raw bytes to 16-bit PCM samples and de-interleave
+        const pcm = new Int16Array(concatenatedData.buffer);
+        const numChannels = 2;
+        const numSamples = pcm.length / numChannels;
+        const left = new Int16Array(numSamples);
+        const right = new Int16Array(numSamples);
+
+        for (let i = 0; i < numSamples; i++) {
+            left[i] = pcm[i * 2];
+            right[i] = pcm[i * 2 + 1];
+        }
+
+        // 3. Use the Web Worker for encoding
+        const worker = new Worker(new URL('./mp3-encoder-worker.ts', import.meta.url));
+
+        worker.onmessage = (e: MessageEvent) => {
+            if (e.data.error) {
+                console.error("MP3 encoding error:", e.data.error);
+                alert(`Sorry, failed to encode MP3: ${e.data.error}`);
+                return;
+            }
+
+            const { mp3Data } = e.data;
+            const blob = new Blob(mp3Data, { type: 'audio/mp3' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `lyria-music-${new Date().toISOString().slice(0,11).replace(/-/g,'')}.mp3`;
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            URL.revokeObjectURL(url);
+            worker.terminate();
+        };
+
+        worker.onerror = (e) => {
+            console.error('Worker error:', e);
+            alert('An error occurred with the encoding worker.');
+            worker.terminate();
+        };
+
+        // 4. Send data to the worker, transferring ownership of the buffers
+        worker.postMessage({
+            left,
+            right,
+            sampleRate: this.audioContext.sampleRate,
+        }, [left.buffer, right.buffer]);
     }
 
     private formatDuration = (seconds: number) => `${String(Math.floor(seconds/60)).padStart(2,'0')}:${String(Math.floor(seconds%60)).padStart(2,'0')}`;
@@ -803,11 +874,14 @@ class PromptDjApp extends LitElement {
                     <div class="progress-handle" style=${styleMap({left: `${progressPercent}%`})} @pointerdown=${this.handleSeekPointerDown}></div>
                 </div>
                 <div class="duration-display">${this.formatDuration(this.totalDuration)}</div>
-                <button class="play-button" @click=${this.handlePlayPause}>
-                    ${this.playbackState === 'playing' ? 'Pause' : this.playbackState === 'loading' ? 'Loading...' : 'Play'}
-                </button>
-                <button class="reset-button" @click=${this.handleReset}>Reset</button>
-                <button class="download-button" @click=${this.handleDownload} .disabled=${this.receivedAudioChunks.length === 0}>Download</button>
+                <div class="button-group">
+                    <button class="play-button" @click=${this.handlePlayPause}>
+                        ${this.playbackState === 'playing' ? 'Pause' : this.playbackState === 'loading' ? 'Loading...' : 'Play'}
+                    </button>
+                    <button class="reset-button" @click=${this.handleReset}>Reset</button>
+                    <button class="download-button" @click=${this.handleDownloadWav} .disabled=${this.receivedAudioChunks.length === 0}>Download WAV</button>
+                    <button class="download-button" @click=${this.handleDownloadMp3} .disabled=${this.receivedAudioChunks.length === 0}>Download MP3</button>
+                </div>
             </div>
         `;
     }
@@ -837,7 +911,8 @@ class PromptDjApp extends LitElement {
         .progress-handle { position: absolute; top: 50%; transform: translate(-50%, -50%); width: 16px; height: 16px; background-color: white; border-radius: 50%; cursor: grab; z-index: 10; }
         .progress-handle:active { cursor: grabbing; }
         .duration-display { font-size: 2.5vmin; color: #ccc; font-family: monospace; white-space: nowrap; }
-        .play-button, .download-button, .reset-button { font-size: 3vmin; padding: 2vmin 4vmin; cursor: pointer; border-radius: 50px; border: none; min-width: 10vmin; text-align: center; }
+        .button-group { display: flex; gap: 1.5vmin; }
+        .play-button, .download-button, .reset-button { font-size: 2vmin; padding: 1.5vmin 3vmin; cursor: pointer; border-radius: 50px; border: none; min-width: 10vmin; text-align: center; white-space: nowrap; }
         .play-button { background: #5200ff; color: white; }
         .reset-button { background: #555; color: white; }
         .reset-button:hover { background: #666; }
