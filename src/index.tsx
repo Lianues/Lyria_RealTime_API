@@ -127,28 +127,33 @@ class PromptController extends LitElement {
         }
     }
 
-    private updateWeight(e: Event) {
+    private _setWeightFromInput(e: Event) {
         const target = e.target as HTMLInputElement;
         const newWeight = parseFloat(target.value);
-        
+
         if (isNaN(newWeight)) {
             if (target.value.trim() === '') {
                 this.weight = 0;
-                this.dispatchPromptChange();
             }
             return;
         }
 
         const min = Number(target.min) || 0;
         const max = Number(target.max) || 2;
-        
         const clampedWeight = Math.max(min, Math.min(max, newWeight));
-        
+
         if (clampedWeight !== newWeight) {
             target.value = String(clampedWeight);
         }
-        
         this.weight = clampedWeight;
+    }
+
+    private handleWeightInput(e: Event) {
+        this._setWeightFromInput(e);
+    }
+
+    private updateWeight(e: Event) {
+        this._setWeightFromInput(e);
         this.dispatchPromptChange();
     }
 
@@ -178,8 +183,8 @@ class PromptController extends LitElement {
                 <div class="drag-handle">${handleIcon}</div>
                 <span class="prompt-text" contenteditable="true" @blur=${this.updateText}></span>
                 <div class="weight-control">
-                    <input type="range" min="0" max="2" step="0.01" .value=${this.weight} @input=${this.updateWeight}>
-                    <input type="number" class="weight-value" min="0" max="2" step="0.01" .value=${this.weight.toFixed(2)} @input=${this.updateWeight}>
+                    <input type="range" min="0" max="2" step="0.01" .value=${this.weight} @input=${this.handleWeightInput} @change=${this.updateWeight}>
+                    <input type="number" class="weight-value" min="0" max="2" step="0.01" .value=${this.weight.toFixed(2)} @input=${this.handleWeightInput} @change=${this.updateWeight}>
                 </div>
                 <button class="remove-button" @click=${this.dispatchPromptRemoved}>×</button>
             </div>
@@ -241,7 +246,7 @@ class SettingsPanel extends LitElement {
         this.dispatchEvent(new CustomEvent('settings-changed', { detail: this.config }));
     }
 
-    private handleInputChange(e: Event) {
+    private _setConfigFromInput(e: Event) {
         const target = e.target as HTMLInputElement;
         const key = target.id as keyof LiveMusicGenerationConfig;
         let value: any = target.type === 'checkbox' ? target.checked : target.value;
@@ -249,12 +254,11 @@ class SettingsPanel extends LitElement {
         if (target.type === 'range' || target.type === 'number') {
             const min = Number(target.min);
             const max = Number(target.max);
-            let numValue = Number(value);
 
             if (target.value === '') {
                 value = undefined;
             } else {
-                let numValue = Number(value);
+                const numValue = Number(value);
                 if (isNaN(numValue)) {
                     value = undefined;
                 } else {
@@ -266,8 +270,15 @@ class SettingsPanel extends LitElement {
                 }
             }
         }
-        
         this.config = { ...this.config, [key]: value };
+    }
+
+    private handleSettingsInput(e: Event) {
+        this._setConfigFromInput(e);
+    }
+
+    private handleInputChange(e: Event) {
+        this._setConfigFromInput(e);
         this.dispatchEvent(new CustomEvent('settings-changed', { detail: this.config }));
     }
 
@@ -288,22 +299,22 @@ class SettingsPanel extends LitElement {
                 <div class="setting">
                     <label for="guidance">Guidance</label>
                     <div class="slider-group">
-                        <input type="range" id="guidance" min="0" max="6" step="0.1" .value=${cfg.guidance} @input=${this.handleInputChange}>
-                        <input type="number" id="guidance" min="0" max="6" step="0.1" .value=${cfg.guidance?.toFixed(1)} @input=${this.handleInputChange} class="value-input">
+                        <input type="range" id="guidance" min="0" max="6" step="0.1" .value=${cfg.guidance} @input=${this.handleSettingsInput} @change=${this.handleInputChange}>
+                        <input type="number" id="guidance" min="0" max="6" step="0.1" .value=${cfg.guidance?.toFixed(1)} @input=${this.handleSettingsInput} @change=${this.handleInputChange} class="value-input">
                     </div>
                 </div>
                 <div class="setting">
                     <label for="temperature">Temperature</label>
                      <div class="slider-group">
-                        <input type="range" id="temperature" min="0" max="3" step="0.1" .value=${cfg.temperature} @input=${this.handleInputChange}>
-                        <input type="number" id="temperature" min="0" max="3" step="0.1" .value=${cfg.temperature?.toFixed(1)} @input=${this.handleInputChange} class="value-input">
+                        <input type="range" id="temperature" min="0" max="3" step="0.1" .value=${cfg.temperature} @input=${this.handleSettingsInput} @change=${this.handleInputChange}>
+                        <input type="number" id="temperature" min="0" max="3" step="0.1" .value=${cfg.temperature?.toFixed(1)} @input=${this.handleSettingsInput} @change=${this.handleInputChange} class="value-input">
                     </div>
                 </div>
                 <div class="setting">
                     <label for="topK">Top K</label>
                     <div class="slider-group">
-                        <input type="range" id="topK" min="1" max="1000" step="1" .value=${cfg.topK} @input=${this.handleInputChange}>
-                        <input type="number" id="topK" min="1" max="1000" step="1" .value=${cfg.topK} @input=${this.handleInputChange} class="value-input">
+                        <input type="range" id="topK" min="1" max="1000" step="1" .value=${cfg.topK} @input=${this.handleSettingsInput} @change=${this.handleInputChange}>
+                        <input type="number" id="topK" min="1" max="1000" step="1" .value=${cfg.topK} @input=${this.handleSettingsInput} @change=${this.handleInputChange} class="value-input">
                     </div>
                 </div>
                 <div class="setting">
@@ -315,8 +326,8 @@ class SettingsPanel extends LitElement {
                         </div>
                     </div>
                     <div class="slider-group">
-                        <input type="range" id="density" min="0" max="1" step="0.05" .value=${cfg.density ?? 0.5} @input=${this.handleInputChange} .disabled=${cfg.density === undefined}>
-                        <input type="number" id="density" min="0" max="1" step="0.05" .value=${cfg.density?.toFixed(2) ?? ''} @input=${this.handleInputChange} class="value-input" .disabled=${cfg.density === undefined} placeholder="Auto">
+                        <input type="range" id="density" min="0" max="1" step="0.05" .value=${cfg.density ?? 0.5} @input=${this.handleSettingsInput} @change=${this.handleInputChange} .disabled=${cfg.density === undefined}>
+                        <input type="number" id="density" min="0" max="1" step="0.05" .value=${cfg.density?.toFixed(2) ?? ''} @input=${this.handleSettingsInput} @change=${this.handleInputChange} class="value-input" .disabled=${cfg.density === undefined} placeholder="Auto">
                     </div>
                 </div>
                 <div class="setting">
@@ -328,18 +339,18 @@ class SettingsPanel extends LitElement {
                         </div>
                     </div>
                     <div class="slider-group">
-                        <input type="range" id="brightness" min="0" max="1" step="0.05" .value=${cfg.brightness ?? 0.5} @input=${this.handleInputChange} .disabled=${cfg.brightness === undefined}>
-                        <input type="number" id="brightness" min="0" max="1" step="0.05" .value=${cfg.brightness?.toFixed(2) ?? ''} @input=${this.handleInputChange} class="value-input" .disabled=${cfg.brightness === undefined} placeholder="Auto">
+                        <input type="range" id="brightness" min="0" max="1" step="0.05" .value=${cfg.brightness ?? 0.5} @input=${this.handleSettingsInput} @change=${this.handleInputChange} .disabled=${cfg.brightness === undefined}>
+                        <input type="number" id="brightness" min="0" max="1" step="0.05" .value=${cfg.brightness?.toFixed(2) ?? ''} @input=${this.handleSettingsInput} @change=${this.handleInputChange} class="value-input" .disabled=${cfg.brightness === undefined} placeholder="Auto">
                     </div>
                 </div>
                 <!-- Inputs and Selects -->
                 <div class="setting">
                     <label for="bpm">BPM</label>
-                    <input type="number" id="bpm" min="60" max="200" .value=${cfg.bpm ?? ''} @input=${this.handleInputChange} placeholder="Auto" .disabled=${isPlaying}>
+                    <input type="number" id="bpm" min="60" max="200" .value=${cfg.bpm ?? ''} @input=${this.handleSettingsInput} @change=${this.handleInputChange} placeholder="Auto" .disabled=${isPlaying}>
                 </div>
                 <div class="setting">
                     <label for="seed">Seed</label>
-                    <input type="number" id="seed" min="0" max="2147483647" .value=${cfg.seed ?? ''} @input=${this.handleInputChange} placeholder="Auto">
+                    <input type="number" id="seed" min="0" max="2147483647" .value=${cfg.seed ?? ''} @input=${this.handleSettingsInput} @change=${this.handleInputChange} placeholder="Auto">
                 </div>
                 <div class="setting">
                     <label for="scale">Scale</label>
@@ -364,6 +375,10 @@ class SettingsPanel extends LitElement {
                 </div>
             </div>
         `;
+    }
+
+    public getConfig(): Partial<LiveMusicGenerationConfig> {
+        return this.config;
     }
 
     static override styles = css`
@@ -405,6 +420,7 @@ class SettingsPanel extends LitElement {
 
 @customElement('prompt-dj-app')
 class PromptDjApp extends LitElement {
+    @query('settings-panel') private settingsPanel!: SettingsPanel;
     @state() private prompts: Prompt[] = [];
     @state() private playbackState: PlaybackState = 'stopped';
     @state() private totalDuration = 0;
@@ -445,6 +461,8 @@ class PromptDjApp extends LitElement {
                 },
             });
             await this.setSessionPrompts();
+            const initialSettings = this.settingsPanel.getConfig();
+            await this._sendSettingsToSession(initialSettings);
             this.loadAudio();
         } catch (e) {
             console.error('Failed to connect to session:', e);
@@ -502,14 +520,18 @@ class PromptDjApp extends LitElement {
         }
     }, 200);
 
-    updateSettings = throttle(async (e: CustomEvent<LiveMusicGenerationConfig>) => {
+    _sendSettingsToSession = throttle(async (config: Partial<LiveMusicGenerationConfig>) => {
         if (!this.session) return;
         try {
-            await this.session.setMusicGenerationConfig({ musicGenerationConfig: e.detail });
+            await this.session.setMusicGenerationConfig({ musicGenerationConfig: config });
         } catch (e) {
             console.error('Failed to update settings:', e);
         }
     }, 200);
+
+    handleSettingsChanged(e: CustomEvent<LiveMusicGenerationConfig>) {
+        this._sendSettingsToSession(e.detail);
+    }
 
     handlePromptChanged(e: CustomEvent<Prompt>) {
         const changedPrompt = e.detail;
@@ -863,7 +885,7 @@ class PromptDjApp extends LitElement {
                     <overlay-scrollbar>
                         <settings-panel
                             .playbackState=${this.playbackState}
-                            @settings-changed=${this.updateSettings}></settings-panel>
+                            @settings-changed=${this.handleSettingsChanged}></settings-panel>
                     </overlay-scrollbar>
                 </div>
             </div>
