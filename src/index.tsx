@@ -583,7 +583,13 @@ class PromptDjApp extends LitElement {
     async handlePlayPause() {
         if (this.playbackState === 'playing' || this.playbackState === 'loading') {
             this.pauseAudio();
-        } else if (this.playbackState === 'paused' || this.playbackState === 'stopped') {
+        } else if (this.playbackState === 'paused') {
+            this.audioContext.resume();
+            this.seekToTime(this.currentPlaybackTime);
+            this.updateProgress();
+            this.outputNode.gain.setValueAtTime(0, this.audioContext.currentTime);
+            this.outputNode.gain.linearRampToValueAtTime(1, this.audioContext.currentTime + 0.1);
+        } else if (this.playbackState === 'stopped') {
             if (!this.session) {
                 await this.connectToSession();
             } else {
@@ -609,7 +615,10 @@ class PromptDjApp extends LitElement {
 
     pauseAudio() {
         if (!this.session) return;
-        if (this.animationFrameId) cancelAnimationFrame(this.animationFrameId);
+        if (this.animationFrameId) {
+            cancelAnimationFrame(this.animationFrameId);
+            this.animationFrameId = undefined;
+        }
         this.session.pause();
         this.playbackState = 'paused';
         this.outputNode.gain.setValueAtTime(this.outputNode.gain.value, this.audioContext.currentTime);
