@@ -271,11 +271,20 @@ class SettingsPanel extends LitElement {
 
     private handleSettingsInput(e: Event) {
         this._setConfigFromInput(e);
+        this.dispatchEvent(new CustomEvent('settings-input', { detail: this.config, bubbles: true, composed: true }));
     }
 
     private handleInputChange(e: Event) {
         this._setConfigFromInput(e);
-        this.dispatchEvent(new CustomEvent('settings-changed', { detail: this.config }));
+        this.dispatchEvent(new CustomEvent('settings-changed', { detail: this.config, bubbles: true, composed: true }));
+    }
+
+    private handlePointerDown() {
+        this.dispatchEvent(new CustomEvent('settings-adjust-start', { bubbles: true, composed: true }));
+    }
+
+    private handlePointerUp() {
+        this.dispatchEvent(new CustomEvent('settings-adjust-end', { bubbles: true, composed: true }));
     }
 
     override render() {
@@ -294,21 +303,21 @@ class SettingsPanel extends LitElement {
                 <!-- Sliders -->
                 <div class="setting">
                     <label for="guidance">Guidance</label>
-                    <div class="slider-group">
+                    <div class="slider-group" @pointerdown=${this.handlePointerDown} @pointerup=${this.handlePointerUp}>
                         <input type="range" id="guidance" min="0" max="6" step="0.1" .value=${cfg.guidance} @input=${this.handleSettingsInput} @change=${this.handleInputChange}>
                         <input type="number" id="guidance" min="0" max="6" step="0.1" .value=${cfg.guidance?.toFixed(1)} @input=${this.handleSettingsInput} @change=${this.handleInputChange} class="value-input">
                     </div>
                 </div>
                 <div class="setting">
                     <label for="temperature">Temperature</label>
-                     <div class="slider-group">
+                     <div class="slider-group" @pointerdown=${this.handlePointerDown} @pointerup=${this.handlePointerUp}>
                         <input type="range" id="temperature" min="0" max="3" step="0.1" .value=${cfg.temperature} @input=${this.handleSettingsInput} @change=${this.handleInputChange}>
                         <input type="number" id="temperature" min="0" max="3" step="0.1" .value=${cfg.temperature?.toFixed(1)} @input=${this.handleSettingsInput} @change=${this.handleInputChange} class="value-input">
                     </div>
                 </div>
                 <div class="setting">
                     <label for="topK">Top K</label>
-                    <div class="slider-group">
+                    <div class="slider-group" @pointerdown=${this.handlePointerDown} @pointerup=${this.handlePointerUp}>
                         <input type="range" id="topK" min="1" max="1000" step="1" .value=${cfg.topK} @input=${this.handleSettingsInput} @change=${this.handleInputChange}>
                         <input type="number" id="topK" min="1" max="1000" step="1" .value=${cfg.topK} @input=${this.handleSettingsInput} @change=${this.handleInputChange} class="value-input">
                     </div>
@@ -321,7 +330,7 @@ class SettingsPanel extends LitElement {
                             <label for="auto-density">Auto</label>
                         </div>
                     </div>
-                    <div class="slider-group">
+                    <div class="slider-group" @pointerdown=${this.handlePointerDown} @pointerup=${this.handlePointerUp}>
                         <input type="range" id="density" min="0" max="1" step="0.05" .value=${cfg.density ?? 0.5} @input=${this.handleSettingsInput} @change=${this.handleInputChange} .disabled=${cfg.density === undefined}>
                         <input type="number" id="density" min="0" max="1" step="0.05" .value=${cfg.density?.toFixed(2) ?? ''} @input=${this.handleSettingsInput} @change=${this.handleInputChange} class="value-input" .disabled=${cfg.density === undefined} placeholder="Auto">
                     </div>
@@ -334,7 +343,7 @@ class SettingsPanel extends LitElement {
                             <label for="auto-brightness">Auto</label>
                         </div>
                     </div>
-                    <div class="slider-group">
+                    <div class="slider-group" @pointerdown=${this.handlePointerDown} @pointerup=${this.handlePointerUp}>
                         <input type="range" id="brightness" min="0" max="1" step="0.05" .value=${cfg.brightness ?? 0.5} @input=${this.handleSettingsInput} @change=${this.handleInputChange} .disabled=${cfg.brightness === undefined}>
                         <input type="number" id="brightness" min="0" max="1" step="0.05" .value=${cfg.brightness?.toFixed(2) ?? ''} @input=${this.handleSettingsInput} @change=${this.handleInputChange} class="value-input" .disabled=${cfg.brightness === undefined} placeholder="Auto">
                     </div>
@@ -430,6 +439,7 @@ class PromptDjApp extends LitElement {
     @state() private activeSources: AudioBufferSourceNode[] = [];
     @state() private decodedAudioBuffers: AudioBuffer[] = [];
     @state() private isSeeking = false;
+    @state() private isAdjustingSettings = false;
     private animationFrameId?: number;
     private streamStartTime = 0;
     private nextPromptId = 0;
@@ -542,6 +552,10 @@ class PromptDjApp extends LitElement {
         }
     }, 200);
 
+    handleSettingsInput(e: CustomEvent<LiveMusicGenerationConfig>) {
+        this.settings = e.detail;
+    }
+
     handleSettingsChanged(e: CustomEvent<LiveMusicGenerationConfig>) {
         this.settings = e.detail;
         this._sendSettingsToSession(this.settings);
@@ -622,7 +636,7 @@ class PromptDjApp extends LitElement {
     handleReset = () => this.stopAudio();
 
     updateProgress = () => {
-        if (this.isSeeking) {
+        if (this.isSeeking || this.isAdjustingSettings) {
             this.animationFrameId = requestAnimationFrame(this.updateProgress);
             return;
         }
@@ -980,7 +994,10 @@ class PromptDjApp extends LitElement {
                         <settings-panel
                             .playbackState=${this.playbackState}
                             .config=${this.settings}
-                            @settings-changed=${this.handleSettingsChanged}></settings-panel>
+                            @settings-input=${this.handleSettingsInput}
+                            @settings-changed=${this.handleSettingsChanged}
+                            @settings-adjust-start=${() => this.isAdjustingSettings = true}
+                            @settings-adjust-end=${() => this.isAdjustingSettings = false}></settings-panel>
                     </overlay-scrollbar>
                 </div>
             </div>
