@@ -1034,7 +1034,7 @@ class PromptDjApp extends LitElement {
         .panel-area { flex-basis: 17.5%; overflow: hidden; padding: 0 1vmin; }
         #prompts-container { display: flex; flex-direction: column; gap: 1.5vmin; padding-right: 1vmin; }
         .add-button { font-size: 3vmin; cursor: pointer; background: #333; color: #fff; border: 1px solid #555; border-radius: 8px; height: 5vmin; flex-shrink: 0; display: flex; align-items: center; justify-content: center; }
-        .playback-container { display: flex; justify-content: center; align-items: center; padding: 2vmin; gap: 1.5vmin; width: 100%; max-width: 800px; margin: 0 auto; }
+        .playback-container { display: flex; justify-content: center; align-items: center; padding: 2vmin; gap: 1.5vmin; width: 100%; max-width: 1200px; margin: 0 auto; }
         .progress-bar-container { position: relative; height: 8px; flex-grow: 1; background-color: #333; border-radius: 4px; cursor: pointer; }
         .progress-bar { height: 100%; background-color: #5200ff; border-radius: 4px; transition: width 0.1s linear; }
         .progress-handle { position: absolute; top: 50%; transform: translate(-50%, -50%); width: 16px; height: 16px; background-color: white; border-radius: 50%; cursor: grab; z-index: 10; }
