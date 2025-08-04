@@ -227,11 +227,7 @@ class PromptController extends LitElement {
 @customElement('settings-panel')
 class SettingsPanel extends LitElement {
     @property({type: String}) playbackState: PlaybackState = 'stopped';
-    @state() private config: Partial<LiveMusicGenerationConfig> = {
-        temperature: 1.1,
-        topK: 40,
-        guidance: 4.0,
-    };
+    @property({type: Object}) config: Partial<LiveMusicGenerationConfig> = {};
 
     private handleAutoChange(e: Event) {
         const target = e.target as HTMLInputElement;
@@ -421,7 +417,13 @@ class SettingsPanel extends LitElement {
 @customElement('prompt-dj-app')
 class PromptDjApp extends LitElement {
     @query('settings-panel') private settingsPanel!: SettingsPanel;
+    @query('#visualizer') private visualizerCanvas!: HTMLCanvasElement;
     @state() private prompts: Prompt[] = [];
+    @state() private settings: Partial<LiveMusicGenerationConfig> = {
+        temperature: 1.1,
+        topK: 40,
+        guidance: 4.0,
+    };
     @state() private playbackState: PlaybackState = 'stopped';
     @state() private totalDuration = 0;
     @state() private currentPlaybackTime = 0;
@@ -435,14 +437,26 @@ class PromptDjApp extends LitElement {
     private receivedAudioChunks: Uint8Array[] = [];
     private audioContext = new ((window as any).AudioContext || (window as any).webkitAudioContext)({ sampleRate: 48000 });
     private outputNode = this.audioContext.createGain();
+    private analyser: AnalyserNode;
+    private frequencyData: Uint8Array;
     private nextStartTime = 0;
     private readonly bufferTime = 1.0;
     private potentialDragTarget: HTMLElement | null = null;
+    private visualizerCtx?: CanvasRenderingContext2D | null;
 
     constructor() {
         super();
-        this.outputNode.connect(this.audioContext.destination);
+        this.analyser = this.audioContext.createAnalyser();
+        this.analyser.fftSize = 2048;
+        const bufferLength = this.analyser.frequencyBinCount;
+        this.frequencyData = new Uint8Array(bufferLength);
+        this.outputNode.connect(this.analyser);
+        this.analyser.connect(this.audioContext.destination);
         this.addInitialPrompts();
+    }
+
+    override firstUpdated() {
+        this.visualizerCtx = this.visualizerCanvas.getContext('2d');
     }
     
     addInitialPrompts() {
@@ -461,8 +475,7 @@ class PromptDjApp extends LitElement {
                 },
             });
             await this.setSessionPrompts();
-            const initialSettings = this.settingsPanel.getConfig();
-            await this._sendSettingsToSession(initialSettings);
+            await this._sendSettingsToSession(this.settings);
             this.loadAudio();
         } catch (e) {
             console.error('Failed to connect to session:', e);
@@ -530,7 +543,8 @@ class PromptDjApp extends LitElement {
     }, 200);
 
     handleSettingsChanged(e: CustomEvent<LiveMusicGenerationConfig>) {
-        this._sendSettingsToSession(e.detail);
+        this.settings = e.detail;
+        this._sendSettingsToSession(this.settings);
     }
 
     handlePromptChanged(e: CustomEvent<Prompt>) {
@@ -615,8 +629,10 @@ class PromptDjApp extends LitElement {
         if (this.playbackState !== 'playing' && this.playbackState !== 'loading') return;
         const elapsed = this.audioContext.currentTime - this.streamStartTime;
         this.currentPlaybackTime = Math.max(0, Math.min(elapsed, this.totalDuration));
+        this.visualize();
         this.animationFrameId = requestAnimationFrame(this.updateProgress);
     }
+
 
     private handleMouseDown(e: MouseEvent) {
         const path = e.composedPath();
@@ -706,7 +722,7 @@ class PromptDjApp extends LitElement {
         worker.onmessage = (e: MessageEvent) => {
             if (e.data.error) {
                 console.error("MP3 encoding error:", e.data.error);
-                alert(`Sorry, failed to encode MP3: ${e.data.error}`);
+                alert(`抱歉，MP3编码失败: ${e.data.error}`);
                 return;
             }
 
@@ -725,7 +741,7 @@ class PromptDjApp extends LitElement {
 
         worker.onerror = (e) => {
             console.error('Worker error:', e);
-            alert('An error occurred with the encoding worker.');
+            alert('编码工作线程发生错误。');
             worker.terminate();
         };
 
@@ -735,6 +751,53 @@ class PromptDjApp extends LitElement {
             right,
             sampleRate: this.audioContext.sampleRate,
         }, [left.buffer, right.buffer]);
+    }
+
+    private handleImportConfig = async () => {
+        try {
+            const configString = await navigator.clipboard.readText();
+            const newConfig = JSON.parse(configString);
+
+            // Basic validation
+            if (!newConfig || !Array.isArray(newConfig.prompts) || typeof newConfig.settings !== 'object') {
+                throw new Error('无效的配置格式。');
+            }
+
+            const newPrompts = newConfig.prompts.map((p: any) => {
+                const promptId = `prompt-${this.nextPromptId++}`;
+                const usedColors = this.prompts.map(pr => pr.color).concat(newConfig.prompts.map((pr:any) => pr.color));
+                const color = getUnusedRandomColor(usedColors);
+                return {
+                    promptId,
+                    text: String(p.text ?? 'New Prompt'),
+                    weight: Number(p.weight ?? 1),
+                    color,
+                };
+            });
+
+            this.prompts = newPrompts;
+            this.settings = { ...this.settings, ...newConfig.settings };
+            this.setSessionPrompts();
+            this._sendSettingsToSession(this.settings);
+            alert('配置导入成功！');
+        } catch (err) {
+            console.error('导入配置失败:', err);
+            alert(`导入配置失败: ${err instanceof Error ? err.message : '未知错误'}`);
+        }
+    }
+
+    private handleExportConfig = () => {
+        const configToExport = {
+            prompts: this.prompts.map(({ text, weight }) => ({ text, weight })),
+            settings: this.settings,
+        };
+        const configString = JSON.stringify(configToExport, null, 2);
+        navigator.clipboard.writeText(configString).then(() => {
+            alert('配置已复制到剪贴板！');
+        }, (err) => {
+            console.error('无法将配置复制到剪贴板: ', err);
+            alert('复制配置失败。');
+        });
     }
 
     private formatDuration = (seconds: number) => `${String(Math.floor(seconds/60)).padStart(2,'0')}:${String(Math.floor(seconds%60)).padStart(2,'0')}`;
@@ -824,6 +887,36 @@ class PromptDjApp extends LitElement {
         this.seekToTime(this.totalDuration * seekRatio);
     }
 
+    private drawVisualizer() {
+        if (!this.visualizerCtx || !this.visualizerCanvas) return;
+        const canvas = this.visualizerCanvas;
+        const ctx = this.visualizerCtx;
+        if (canvas.width !== canvas.offsetWidth || canvas.height !== canvas.offsetHeight) {
+            canvas.width = canvas.offsetWidth;
+            canvas.height = canvas.offsetHeight;
+        }
+        const bufferLength = this.analyser.frequencyBinCount;
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        const barWidth = (canvas.width / (bufferLength/2));
+        let barHeight;
+        let x = 0;
+        for(let i = 0; i < bufferLength; i++) {
+            barHeight = this.frequencyData[i] * (canvas.height / 255);
+            const r = barHeight + (25 * (i/bufferLength));
+            const g = 250 * (i/bufferLength);
+            const b = 50;
+            ctx.fillStyle = "rgba(" + r + "," + g + "," + b + ", 0.6)";
+            ctx.fillRect(x, canvas.height - barHeight, barWidth, barHeight);
+            x += barWidth + 1;
+        }
+    }
+
+    private visualize = () => {
+        if (this.playbackState !== 'playing') return;
+        this.analyser.getByteFrequencyData(this.frequencyData);
+        this.drawVisualizer();
+    }
+
     private handleSeekPointerDown = (e: PointerEvent) => {
         if (this.playbackState === 'stopped' || !this.totalDuration) return;
 
@@ -858,6 +951,7 @@ class PromptDjApp extends LitElement {
         const progressPercent = (this.currentPlaybackTime / this.totalDuration) * 100 || 0;
         return html`
             <div id="background" style=${styleMap({backgroundImage: this.makeBackground()})}></div>
+            <canvas id="visualizer"></canvas>
             <div class="main-content">
                 <div class="prompts-area"
                      @mousedown=${this.handleMouseDown}
@@ -885,6 +979,7 @@ class PromptDjApp extends LitElement {
                     <overlay-scrollbar>
                         <settings-panel
                             .playbackState=${this.playbackState}
+                            .config=${this.settings}
                             @settings-changed=${this.handleSettingsChanged}></settings-panel>
                     </overlay-scrollbar>
                 </div>
@@ -898,11 +993,13 @@ class PromptDjApp extends LitElement {
                 <div class="duration-display">${this.formatDuration(this.totalDuration)}</div>
                 <div class="button-group">
                     <button class="play-button" @click=${this.handlePlayPause}>
-                        ${this.playbackState === 'playing' ? 'Pause' : this.playbackState === 'loading' ? 'Loading...' : 'Play'}
+                        ${this.playbackState === 'playing' ? '暂停' : this.playbackState === 'loading' ? '加载中...' : '播放'}
                     </button>
-                    <button class="reset-button" @click=${this.handleReset}>Reset</button>
-                    <button class="download-button" @click=${this.handleDownloadWav} .disabled=${this.receivedAudioChunks.length === 0}>Download WAV</button>
-                    <button class="download-button" @click=${this.handleDownloadMp3} .disabled=${this.receivedAudioChunks.length === 0}>Download MP3</button>
+                    <button class="reset-button" @click=${this.handleReset}>重置</button>
+                    <button class="config-button" @click=${this.handleImportConfig}>导入配置</button>
+                    <button class="config-button" @click=${this.handleExportConfig}>导出配置</button>
+                    <button class="download-button" @click=${this.handleDownloadWav} .disabled=${this.receivedAudioChunks.length === 0}>下载WAV</button>
+                    <button class="download-button" @click=${this.handleDownloadMp3} .disabled=${this.receivedAudioChunks.length === 0}>下载MP3</button>
                 </div>
             </div>
         `;
@@ -921,6 +1018,16 @@ class PromptDjApp extends LitElement {
     
     static override styles = css`
         :host { display: flex; flex-direction: column; height: 100%; padding: 2vmin; box-sizing: border-box; }
+        #visualizer {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            width: 100%;
+            height: 25vh;
+            z-index: -1;
+            pointer-events: none;
+            opacity: 0.5;
+        }
         #background { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: -1; transition: background-image 0.5s; }
         .main-content { display: flex; flex: 1; gap: 2vmin; overflow: hidden; }
         .prompts-area { display: flex; flex-direction: column; flex-basis: 82.5%; gap: 2vmin; overflow: hidden; }
@@ -934,13 +1041,13 @@ class PromptDjApp extends LitElement {
         .progress-handle:active { cursor: grabbing; }
         .duration-display { font-size: 2.5vmin; color: #ccc; font-family: monospace; white-space: nowrap; }
         .button-group { display: flex; gap: 1.5vmin; }
-        .play-button, .download-button, .reset-button { font-size: 2vmin; padding: 1.5vmin 3vmin; cursor: pointer; border-radius: 50px; border: none; min-width: 10vmin; text-align: center; white-space: nowrap; }
+        .play-button, .download-button, .reset-button, .config-button { font-size: 2vmin; padding: 1.5vmin 3vmin; cursor: pointer; border-radius: 50px; border: none; min-width: 10vmin; text-align: center; white-space: nowrap; }
         .play-button { background: #5200ff; color: white; }
         .reset-button { background: #555; color: white; }
         .reset-button:hover { background: #666; }
-        .download-button { background: transparent; color: #5200ff; border: 1px solid #5200ff; }
+        .download-button, .config-button { background: transparent; color: #5200ff; border: 1px solid #5200ff; }
         .download-button:disabled { opacity: 0.4; cursor: not-allowed; border-color: #444; color: #444; }
-        .download-button:hover:not(:disabled) { background-color: #5200ff22; }
+        .download-button:hover:not(:disabled), .config-button:hover { background-color: #5200ff22; }
     `;
 }
 
