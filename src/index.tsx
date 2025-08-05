@@ -815,12 +815,37 @@ class PromptDjApp extends LitElement {
             settings: this.settings,
         };
         const configString = JSON.stringify(configToExport, null, 2);
-        navigator.clipboard.writeText(configString).then(() => {
-            alert('配置已复制到剪贴板！');
-        }, (err) => {
-            console.error('无法将配置复制到剪贴板: ', err);
-            alert('复制配置失败。');
-        });
+
+        // 优先使用现代、安全的 Clipboard API
+        if (navigator.clipboard && window.isSecureContext) {
+            navigator.clipboard.writeText(configString).then(() => {
+                alert('配置已复制到剪贴板！');
+            }).catch(err => {
+                console.error('无法将配置复制到剪贴板: ', err);
+                alert('复制配置失败。');
+            });
+        } else {
+            // 回退到传统的 document.execCommand 方法
+            const textArea = document.createElement('textarea');
+            textArea.value = configString;
+            textArea.style.position = 'absolute';
+            textArea.style.left = '-9999px';
+            document.body.appendChild(textArea);
+            textArea.focus();
+            textArea.select();
+            try {
+                const successful = document.execCommand('copy');
+                if (successful) {
+                    alert('配置已复制到剪贴板！');
+                } else {
+                    alert('复制配置失败。');
+                }
+            } catch (err) {
+                console.error('回退复制方法失败: ', err);
+                alert('复制配置失败。');
+            }
+            document.body.removeChild(textArea);
+        }
     }
 
     private formatDuration = (seconds: number) => `${String(Math.floor(seconds/60)).padStart(2,'0')}:${String(Math.floor(seconds%60)).padStart(2,'0')}`;
