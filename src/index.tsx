@@ -778,7 +778,19 @@ class PromptDjApp extends LitElement {
 
     private handleImportConfig = async () => {
         try {
-            const configString = await navigator.clipboard.readText();
+            let configString: string | null = null;
+            // 优先使用现代、安全的 Clipboard API
+            if (navigator.clipboard && window.isSecureContext) {
+                configString = await navigator.clipboard.readText();
+            } else {
+                // 回退到 prompt 输入框
+                configString = prompt('由于环境非安全(non-HTTPS)，请在此处粘贴您的配置:');
+            }
+
+            if (!configString) {
+                return; // 用户取消或没有输入内容
+            }
+
             const newConfig = JSON.parse(configString);
 
             // Basic validation
